@@ -1,5 +1,6 @@
 # goqr
 [![GoDoc](https://godoc.org/github.com/liyue201/goqr?status.svg)](https://godoc.org/github.com/liyue201/goqr)
+[![Go Report Card](https://goreportcard.com/badge/github.com/liyue201/goqr)](https://goreportcard.com/report/github.com/liyue201/goqr)
 [![Example](https://img.shields.io/badge/learn-example-brightgreen.svg)](/example)
 
 This is a QR Code recognition and decoding library in pure go. It can recognize most of images into QR Code string.

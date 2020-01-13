@@ -8,7 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io/ioutil"
-) 
+)
 
 func recognizeFile(path string) {
 	fmt.Printf("recognize file: %v\n", path)

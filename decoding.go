@@ -563,7 +563,6 @@ func decodeNumeric(data *QRData, ds *datastream) error {
 		if numericTuple(data, ds, 4, 1) < 0 {
 			return ErrDataUnderflow
 		}
-		count--
 	}
 	return nil
 }
@@ -605,7 +604,6 @@ func decodeAlpha(data *QRData, ds *datastream) error {
 		if alphaTuple(data, ds, 6, 1) < 0 {
 			return ErrDataUnderflow
 		}
-		count--
 	}
 	return nil
 }

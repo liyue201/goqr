@@ -11,6 +11,7 @@ const (
 	thresholdT    = 5
 )
 
+// Error definition
 var (
 	ErrOutOfRange = errors.New("out of range")
 )

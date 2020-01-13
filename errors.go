@@ -2,6 +2,7 @@ package goqr
 
 import "errors"
 
+// Error definition
 var (
 	ErrNoQRCode        = errors.New("no QR code in image")
 	ErrInvalidGridSize = errors.New("invalid grid size")
