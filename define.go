@@ -1,56 +1,53 @@
 package goqr
 
 const (
-	QR_PIXEL_WHITE  = 0
-	QR_PIXEL_BLACK  = 1
-	QR_PIXEL_REGION = 2
-
-	QR_MAX_REGIONS = 254
-
-	QR_MAX_CAPSTONES = 32
-	QR_MAX_GRIDS     = 8
-
-	QR_PERSPECTIVE_PARAMS = 8
+	qrPixelWhite        = 0
+	qrPixelBlack        = 1
+	qrPixelRegion       = 2
+	qrMaxRegion         = 254
+	qrMaxCastones       = 32
+	qrMaxGrids          = 8
+	qrPerspectiveParams = 8
 )
 
-type qr_pixel_t = uint8
+type qrPixelType = uint8
 
-type Point struct {
+type point struct {
 	x int
 	y int
 }
 
-type QrRegion struct {
-	seed     Point
+type qrRegion struct {
+	seed     point
 	count    int
 	capstone int
 }
 
-type QrCapstone struct {
+type qrCapstone struct {
 	ring    int
 	stone   int
-	corners [4]Point
-	center  Point
-	c       [QR_PERSPECTIVE_PARAMS] float64
+	corners [4]point
+	center  point
+	c       [qrPerspectiveParams]float64
 	qrGrid  int
 }
 
-type QrGrid struct {
-	/* Capstone indices */
-	caps [3] int
+type qrGrid struct {
+	// Capstone indices
+	caps [3]int
 
-	/* Alignment pattern region and corner */
+	// Alignment pattern region and corner
 	alignRegion int
-	align       Point
+	align       point
 
-	/* Timing pattern endpoints */
-	tpep  [3] Point
+	// Timing pattern endpoints
+	tpep  [3]point
 	hscan int
 	vscan int
 
-	/* Grid size and perspective transform */
+	// Grid size and perspective transform
 	gridSize int
-	c        [QR_PERSPECTIVE_PARAMS] float64
+	c        [qrPerspectiveParams]float64
 }
 
 /************************************************************************
@@ -58,26 +55,26 @@ type QrGrid struct {
  */
 
 const (
-	QR_MAX_VERSION   = 40
-	QR_MAX_ALIGNMENT = 7
+	qrMaxVersion = 40
+	qrMaxAliment = 7
 )
 
-type QrRsParams struct {
-	bs int /* Small block size */
-	dw int /* Small data words */
-	ns int /* Number of small blocks */
+type qrRsParams struct {
+	bs int // Small block size
+	dw int // Small data words
+	ns int // Number of small blocks
 }
 
-type QrVersionInfo struct {
+type qrVersionInfo struct {
 	dataBytes int
-	apat      [QR_MAX_ALIGNMENT] int
-	ecc       [4]  QrRsParams
+	apat      [qrMaxAliment]int
+	ecc       [4]qrRsParams
 }
 
 type polygonScoreData struct {
-	ref     Point
-	scores  [4] int
-	corners []Point
+	ref     point
+	scores  [4]int
+	corners []point
 }
 
 type neighbour struct {

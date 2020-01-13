@@ -4,7 +4,7 @@ import (
 	"math"
 )
 
-const MAX_POLY = 64
+const maxPoly = 64
 
 type galoisField struct {
 	p   int
@@ -63,7 +63,7 @@ var gf256Exp = [256]uint8{
 	0x1b, 0x36, 0x6c, 0xd8, 0xad, 0x47, 0x8e, 0x01,
 }
 
-var gf256Log = [256] uint8{
+var gf256Log = [256]uint8{
 	0x00, 0xff, 0x01, 0x19, 0x02, 0x32, 0x1a, 0xc6,
 	0x03, 0xdf, 0x33, 0xee, 0x1b, 0x68, 0xc7, 0x4b,
 	0x04, 0x64, 0xe0, 0x0e, 0x34, 0x8d, 0xef, 0x81,
@@ -115,10 +115,10 @@ func polyAdd(dst, src []uint8, c uint8, shift int, gf *galoisField) {
 		return
 	}
 
-	for i := 0; i < MAX_POLY; i++ {
+	for i := 0; i < maxPoly; i++ {
 		p := i + shift
 		v := src[i]
-		if p < 0 || p >= MAX_POLY {
+		if p < 0 || p >= maxPoly {
 			continue
 		}
 		if v == 0 {
@@ -138,7 +138,7 @@ func polyEval(s []uint8, x uint8, gf *galoisField) uint8 {
 		return s[0]
 	}
 
-	for i := 0; i < MAX_POLY; i++ {
+	for i := 0; i < maxPoly; i++ {
 		c := s[i]
 		if c == 0 {
 			continue
@@ -152,10 +152,10 @@ func polyEval(s []uint8, x uint8, gf *galoisField) uint8 {
  * Berlekamp-Massey algorithm for finding error locator polynomials.
  */
 
-func berlekampMassey(s [] uint8, num int, gf *galoisField, sigma [] uint8) {
+func berlekampMassey(s []uint8, num int, gf *galoisField, sigma []uint8) {
 
-	C := make([]uint8, MAX_POLY)
-	B := make([]uint8, MAX_POLY)
+	C := make([]uint8, maxPoly)
+	B := make([]uint8, maxPoly)
 
 	L := 0
 	m := 1
@@ -208,7 +208,7 @@ func berlekampMassey(s [] uint8, num int, gf *galoisField, sigma [] uint8) {
 
 func blockSyndromes(data []uint8, bs, npar int, s []uint8) int {
 	nonzero := 0
-	for i := 0; i < MAX_POLY; i++ {
+	for i := 0; i < maxPoly; i++ {
 		s[i] = 0
 	}
 	for i := 0; i < npar; i++ {
@@ -226,9 +226,9 @@ func blockSyndromes(data []uint8, bs, npar int, s []uint8) int {
 	return nonzero
 }
 
-func elocPoly(omega []uint8, s [] uint8, sigma []uint8, npar int) {
+func elocPoly(omega []uint8, s []uint8, sigma []uint8, npar int) {
 
-	for i := 0; i < MAX_POLY; i++ {
+	for i := 0; i < maxPoly; i++ {
 		omega[i] = 0
 	}
 
@@ -240,7 +240,7 @@ func elocPoly(omega []uint8, s [] uint8, sigma []uint8, npar int) {
 			continue
 		}
 
-		for j := 0; j+1 < MAX_POLY; j++ {
+		for j := 0; j+1 < maxPoly; j++ {
 			b := s[j+1]
 			if i+j >= npar {
 				break
@@ -254,31 +254,30 @@ func elocPoly(omega []uint8, s [] uint8, sigma []uint8, npar int) {
 	}
 }
 
-func correctBlock(data []uint8, ecc *QrRsParams) int {
+func correctBlock(data []uint8, ecc *qrRsParams) error {
 
 	npar := ecc.bs - ecc.dw
-	s := make([]uint8, MAX_POLY)
+	s := make([]uint8, maxPoly)
 
-	/* Compute syndrome vector */
+	// Compute syndrome vector
 	if 0 == blockSyndromes(data, ecc.bs, npar, s) {
-		return QR_SUCCESS
+		return nil
 	}
 
-	sigma := make([]uint8, MAX_POLY)
+	sigma := make([]uint8, maxPoly)
 	berlekampMassey(s, npar, &gf256, sigma)
 
-	/* Compute derivative of sigma */
-	sigmaDeriv := make([]uint8, MAX_POLY)
-	for i := 0; i+1 < MAX_POLY; i += 2 {
+	// Compute derivative of sigma
+	sigmaDeriv := make([]uint8, maxPoly)
+	for i := 0; i+1 < maxPoly; i += 2 {
 		sigmaDeriv[i] = sigma[i+1]
 	}
 
-	/* Compute error evaluator polynomial */
-	omega := make([]uint8, MAX_POLY)
+	// Compute error evaluator polynomial
+	omega := make([]uint8, maxPoly)
 	elocPoly(omega, s, sigma, npar-1)
 
-
-	/* Find error locations and magnitudes */
+	// Find error locations and magnitudes
 	for i := 0; i < ecc.bs; i++ {
 		xinv := gf256Exp[255-i]
 		if 0 == polyEval(sigma, xinv, &gf256) {
@@ -290,9 +289,9 @@ func correctBlock(data []uint8, ecc *QrRsParams) int {
 	}
 
 	if blockSyndromes(data, ecc.bs, npar, s) != 0 {
-		return QR_ERROR_DATA_ECC
+		return ErrDataEcc
 	}
-	return QR_SUCCESS
+	return nil
 }
 
 /************************************************************************
@@ -301,19 +300,19 @@ func correctBlock(data []uint8, ecc *QrRsParams) int {
  * Generator polynomial for GF(2^4) is x^4 + x + 1
  */
 
-const FORMAT_MAX_ERROR = 3
-const FORMAT_SYNDROMES = FORMAT_MAX_ERROR * 2
-const FORMAT_BITS = 15
+const formatMaxError = 3
+const formatSyndrome = formatMaxError * 2
+const formatBits = 15
 
 func formatSyndromes(u uint16, s []uint8) int {
 	nonzero := 0
-	for i := 0; i < MAX_POLY; i++ {
+	for i := 0; i < maxPoly; i++ {
 		s[i] = 0
 	}
-	for i := 0; i < FORMAT_SYNDROMES; i++ {
+	for i := 0; i < formatSyndrome; i++ {
 		s[i] = 0
-		for j := 0; j < FORMAT_BITS; j++ {
-			if u&(uint16(1 << uint(j))) != 0 {
+		for j := 0; j < formatBits; j++ {
+			if u&(uint16(1<<uint(j))) != 0 {
 				s[i] ^= gf16Exp[((i+1)*j)%15]
 			}
 		}
@@ -324,33 +323,32 @@ func formatSyndromes(u uint16, s []uint8) int {
 	return nonzero
 }
 
-func correctFormat(fRet *uint16) int {
+func correctFormat(fRet *uint16) error {
 	u := *fRet
 
-	/* Evaluate U (received codeword) at each of alpha_1 .. alpha_6
-	 * to get S_1 .. S_6 (but we index them from 0).
-	 */
+	// Evaluate U (received codeword) at each of alpha_1 .. alpha_6
+	// to get S_1 .. S_6 (but we index them from 0).
 
-	s := make([]uint8, MAX_POLY)
+	s := make([]uint8, maxPoly)
 	if 0 == formatSyndromes(u, s) {
-		return QR_SUCCESS
+		return nil
 	}
 
-	sigma := make([]uint8, MAX_POLY)
-	berlekampMassey(s, FORMAT_SYNDROMES, &gf16, sigma)
+	sigma := make([]uint8, maxPoly)
+	berlekampMassey(s, formatSyndrome, &gf16, sigma)
 
-	/* Now, find the roots of the polynomial */
+	// Now, find the roots of the polynomial
 	for i := 0; i < 15; i++ {
 		if 0 == polyEval(sigma, gf16Exp[15-i], &gf16) {
 			u ^= 1 << uint16(i)
 		}
 	}
 	if 0 != formatSyndromes(u, s) {
-		return QR_ERROR_FORMAT_ECC
+		return ErrFormatEcc
 	}
 
 	*fRet = u
-	return QR_SUCCESS
+	return nil
 }
 
 /************************************************************************
@@ -358,10 +356,10 @@ func correctFormat(fRet *uint16) int {
  */
 
 type datastream struct {
-	raw      [QR_MAX_PAYLOAD] uint8
+	raw      [qrMaxPayload]uint8
 	dataBits int
 	ptr      int
-	data     [QR_MAX_PAYLOAD] uint8
+	data     [qrMaxPayload]uint8
 }
 
 func maskBit(mask, i, j int) int {
@@ -399,29 +397,29 @@ func reservedCell(version, i, j int) int {
 	aj := -1
 	a := 0
 
-	/* Finder + format: top left */
+	// Finder + format: top left
 	if i < 9 && j < 9 {
 		return 1
 	}
 
-	/* Finder + format: bottom left */
+	// Finder + format: bottom left
 	if i+8 >= size && j < 9 {
 		return 1
 	}
 
-	/* Finder + format: top right */
+	// Finder + format: top right
 	if i < 9 && j+8 >= size {
 		return 1
 	}
-	/* Exclude timing patterns */
+	// Exclude timing patterns
 	if i == 6 || j == 6 {
 		return 1
 	}
 
-	/* Exclude Version info, if it exists. Version info sits adjacent to
-	* the top-right and bottom-left finders in three rows, bounded by
-	* the timing pattern.
-	*/
+	// Exclude Version info, if it exists. Version info sits adjacent to
+	// the top-right and bottom-left finders in three rows, bounded by
+	// the timing pattern.
+
 	if version >= 7 {
 		if i < 6 && j+11 >= size {
 			return 1
@@ -431,8 +429,8 @@ func reservedCell(version, i, j int) int {
 			return 1
 		}
 	}
-	/* Exclude alignment patterns */
-	for a = 0; a < QR_MAX_ALIGNMENT && ver.apat[a] != 0; a++ {
+	// Exclude alignment patterns
+	for a = 0; a < qrMaxAliment && ver.apat[a] != 0; a++ {
 		p := ver.apat[a]
 
 		if int(math.Abs(float64(p-i))) < 3 {
@@ -458,10 +456,10 @@ func reservedCell(version, i, j int) int {
 	return 0
 }
 
-func codestreamEcc(data *QRData, ds *datastream) int {
+func codestreamEcc(data *QRData, ds *datastream) error {
 	ver := &qrVersionDb[data.Version]
 	sbEcc := &ver.ecc[data.EccLevel]
-	var lbEcc QrRsParams
+	var lbEcc qrRsParams
 	lbCount := (ver.dataBytes - sbEcc.bs*sbEcc.ns) / (sbEcc.bs + 1)
 
 	bc := lbCount + sbEcc.ns
@@ -492,7 +490,7 @@ func codestreamEcc(data *QRData, ds *datastream) int {
 		}
 
 		err := correctBlock(dst, ecc)
-		if err != 0 {
+		if err != nil {
 			return err
 		}
 
@@ -500,7 +498,7 @@ func codestreamEcc(data *QRData, ds *datastream) int {
 	}
 
 	ds.dataBits = dstOffset * 8
-	return QR_SUCCESS
+	return nil
 }
 
 func bitsRemaining(ds *datastream) int {
@@ -536,7 +534,7 @@ func numericTuple(data *QRData, ds *datastream, bits, digits int) int {
 	return 0
 }
 
-func decodeNumeric(data *QRData, ds *datastream) int {
+func decodeNumeric(data *QRData, ds *datastream) error {
 	bits := 14
 	if data.Version < 10 {
 		bits = 10
@@ -545,28 +543,29 @@ func decodeNumeric(data *QRData, ds *datastream) int {
 	}
 
 	count := takeBits(ds, bits)
-	if len(data.Payload)+count+1 > QR_MAX_PAYLOAD {
-		return QR_ERROR_DATA_OVERFLOW
+	if len(data.Payload)+count+1 > qrMaxPayload {
+		return ErrDataOverflow
 	}
 	for count >= 3 {
 		if numericTuple(data, ds, 10, 3) < 0 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		count -= 3
 	}
 	if count >= 2 {
 		if numericTuple(data, ds, 7, 2) < 0 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
+
 		}
 		count -= 2
 	}
 	if count > 0 {
 		if numericTuple(data, ds, 4, 1) < 0 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		count--
 	}
-	return QR_SUCCESS
+	return nil
 }
 
 var alphaMap = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:")
@@ -585,7 +584,7 @@ func alphaTuple(data *QRData, ds *datastream, bits, digits int) int {
 	return 0
 }
 
-func decodeAlpha(data *QRData, ds *datastream) int {
+func decodeAlpha(data *QRData, ds *datastream) error {
 	bits := 13
 	if data.Version < 10 {
 		bits = 9
@@ -593,43 +592,43 @@ func decodeAlpha(data *QRData, ds *datastream) int {
 		bits = 11
 	}
 	count := takeBits(ds, bits)
-	if len(data.Payload)+count+1 > QR_MAX_PAYLOAD {
-		return QR_ERROR_DATA_OVERFLOW
+	if len(data.Payload)+count+1 > qrMaxPayload {
+		return ErrDataOverflow
 	}
 	for count >= 2 {
 		if alphaTuple(data, ds, 11, 2) < 0 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		count -= 2
 	}
 	if count > 0 {
 		if alphaTuple(data, ds, 6, 1) < 0 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		count--
 	}
-	return QR_SUCCESS
+	return nil
 }
 
-func decodeByte(data *QRData, ds *datastream) int {
+func decodeByte(data *QRData, ds *datastream) error {
 	bits := 16
 	if data.Version < 10 {
 		bits = 8
 	}
 	count := takeBits(ds, bits)
-	if len(data.Payload)+count+1 > QR_MAX_PAYLOAD {
-		return QR_ERROR_DATA_OVERFLOW
+	if len(data.Payload)+count+1 > qrMaxPayload {
+		return ErrDataOverflow
 	}
 	if bitsRemaining(ds) < count*8 {
-		return QR_ERROR_DATA_UNDERFLOW
+		return ErrDataUnderflow
 	}
 	for i := 0; i < count; i++ {
-		data.Payload = append (data.Payload, uint8(takeBits(ds, 8)))
+		data.Payload = append(data.Payload, uint8(takeBits(ds, 8)))
 	}
-	return QR_SUCCESS
+	return nil
 }
 
-func decodeKanji(data *QRData, ds *datastream) int {
+func decodeKanji(data *QRData, ds *datastream) error {
 	bits := 12
 
 	if data.Version < 10 {
@@ -639,12 +638,12 @@ func decodeKanji(data *QRData, ds *datastream) int {
 	}
 	count := takeBits(ds, bits)
 
-	if len(data.Payload)+count*2+1 > QR_MAX_PAYLOAD {
-		return QR_ERROR_DATA_OVERFLOW
+	if len(data.Payload)+count*2+1 > qrMaxPayload {
+		return ErrDataOverflow
 	}
 
 	if bitsRemaining(ds) < count*13 {
-		return QR_ERROR_DATA_UNDERFLOW
+		return ErrDataUnderflow
 	}
 
 	for i := 0; i < count; i++ {
@@ -655,50 +654,50 @@ func decodeKanji(data *QRData, ds *datastream) int {
 		var sjw uint16
 
 		if intermediate+0x8140 <= 0x9ffc {
-			/* bytes are in the range 0x8140 to 0x9FFC */
+			// bytes are in the range 0x8140 to 0x9FFC
 			sjw = intermediate + 0x8140
 		} else {
-			/* bytes are in the range 0xE040 to 0xEBBF */
+			// bytes are in the range 0xE040 to 0xEBBF
 			sjw = intermediate + 0xc140
 		}
 		data.Payload = append(data.Payload, uint8(sjw>>8))
 		data.Payload = append(data.Payload, uint8(sjw&0xff))
 	}
-	return QR_SUCCESS
+	return nil
 }
 
-func decodeEci(data *QRData, ds *datastream) int {
+func decodeEci(data *QRData, ds *datastream) error {
 	if bitsRemaining(ds) < 8 {
-		return QR_ERROR_DATA_UNDERFLOW
+		return ErrDataOverflow
 	}
 	data.Eci = uint32(takeBits(ds, 8))
 	if (data.Eci & 0xc0) == 0x80 {
 		if bitsRemaining(ds) < 8 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		data.Eci = (data.Eci << 8) | uint32(takeBits(ds, 8))
 	} else if (data.Eci & 0xe0) == 0xc0 {
 		if bitsRemaining(ds) < 16 {
-			return QR_ERROR_DATA_UNDERFLOW
+			return ErrDataUnderflow
 		}
 		data.Eci = (data.Eci << 16) | uint32(takeBits(ds, 16))
 	}
-	return QR_SUCCESS
+	return nil
 }
 
-func decodePayload(data *QRData, ds *datastream) int {
+func decodePayload(data *QRData, ds *datastream) error {
 
 	for bitsRemaining(ds) >= 4 {
-		err := QR_SUCCESS
+		var err error
 		_type := takeBits(ds, 4)
 		switch _type {
-		case QR_DATA_TYPE_NUMERIC:
+		case qrDataTypeNumeric:
 			err = decodeNumeric(data, ds)
-		case QR_DATA_TYPE_ALPHA:
+		case qrDataTypeAlpha:
 			err = decodeAlpha(data, ds)
-		case QR_DATA_TYPE_BYTE:
+		case qrDataTypeByte:
 			err = decodeByte(data, ds)
-		case QR_DATA_TYPE_KANJI:
+		case qrDataTypeKanji:
 			err = decodeKanji(data, ds)
 		case 7:
 			err = decodeEci(data, ds)
@@ -706,7 +705,7 @@ func decodePayload(data *QRData, ds *datastream) int {
 			goto done
 		}
 
-		if err != 0 {
+		if err != nil {
 			return err
 		}
 		if 0 == (_type&(_type-1)) && (_type > data.DataType) {
@@ -715,7 +714,5 @@ func decodePayload(data *QRData, ds *datastream) int {
 	}
 
 done:
-	return QR_SUCCESS
+	return nil
 }
-
-

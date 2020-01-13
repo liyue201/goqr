@@ -1,4 +1,7 @@
 # goqr
+[![GoDoc](https://godoc.org/github.com/liyue201/goqr?status.svg)](https://godoc.org/github.com/liyue201/goqr)
+[![Example](https://img.shields.io/badge/learn-example-brightgreen.svg)](/example)
+
 This is a QR Code recognition and decoding library in pure go. It can recognize most of images into QR Code string.
 
 # Example 
@@ -23,6 +26,7 @@ func recognizeFile(path string) {
 		fmt.Printf("%v\n", err)
 		return
 	}
+
 	img, _, err := image.Decode(bytes.NewReader(imgdata))
 	if err != nil {
 		fmt.Printf("image.Decode error: %v\n", err)
@@ -36,15 +40,10 @@ func recognizeFile(path string) {
 	for _, qrCode := range qrCodes {
 		fmt.Printf("qrCode text: %s\n", qrCode.Payload)
 	}
-	return
 }
 
 func main() {
-	recognizeFile("testdata/01-1.jpg")
-	recognizeFile("testdata/01-2.jpg")
-	recognizeFile("testdata/01-3.jpg")
-	recognizeFile("testdata/01-4.jpg")
-	recognizeFile("testdata/01-5.png")
+	recognizeFile("testdata/008.png")
 }
 
 ```

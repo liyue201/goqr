@@ -8,7 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io/ioutil"
-)
+) 
 
 func recognizeFile(path string) {
 	fmt.Printf("recognize file: %v\n", path)
@@ -31,13 +31,8 @@ func recognizeFile(path string) {
 	for _, qrCode := range qrCodes {
 		fmt.Printf("qrCode text: %s\n", qrCode.Payload)
 	}
-	return
 }
 
 func main() {
-	recognizeFile("testdata/01-1.jpg")
-	recognizeFile("testdata/01-2.jpg")
-	recognizeFile("testdata/01-3.jpg")
-	recognizeFile("testdata/01-4.jpg")
-	recognizeFile("testdata/01-5.png")
+	recognizeFile("testdata/001.png")
 }

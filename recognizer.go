@@ -5,48 +5,59 @@ import (
 	"math"
 )
 
-type Recognizer struct {
+const (
+	thresholdSMin = 1
+	thresholdSDen = 8
+	thresholdT    = 5
+)
+
+var (
+	ErrOutOfRange = errors.New("out of range")
+)
+
+// Recognizer is a Qr Code recognizer interface
+type Recognizer interface {
+	SetPixel(x, y int, val uint8)
+	Begin()
+	End()
+	Count() int
+	Decode(index int) (*QRData, error)
+}
+
+type recognizer struct {
 	pixels    []uint8
 	w         int
 	h         int
-	regions   [] QrRegion
-	capstones [] QrCapstone
-	grids     [] QrGrid
+	regions   []qrRegion
+	capstones []qrCapstone
+	grids     []qrGrid
 }
 
-func NewRecognzer() *Recognizer {
-	return &Recognizer{}
-}
-
-func (q *Recognizer) Resize(w, h int) int {
+// NewRecognizer news a recognizer
+func NewRecognizer(w, h int) Recognizer {
 	if w <= 0 || h <= 0 {
-		return -1
+		return nil
 	}
-	newdim := w * h
-	q.h = h
-	q.w = w
-	if len(q.pixels) >= newdim {
-		q.pixels = q.pixels[:newdim]
-	} else {
-		q.pixels = make([]qr_pixel_t, newdim)
+	return &recognizer{
+		h:      h,
+		w:      w,
+		pixels: make([]qrPixelType, w*h),
 	}
-	return 0
 }
 
-func (q *Recognizer) SetPixel(x, y int, val uint8) {
+func (q *recognizer) SetPixel(x, y int, val uint8) {
 	q.pixels[x+y*q.w] = val
 }
 
-func (q *Recognizer) Count() int {
+func (q *recognizer) Count() int {
 	return len(q.grids)
 }
 
-func (q *Recognizer) Begin() []uint8 {
-	q.regions = make([]QrRegion, QR_PIXEL_REGION)
-	return q.pixels
+func (q *recognizer) Begin() {
+	q.regions = make([]qrRegion, qrPixelRegion)
 }
 
-func (q *Recognizer) End() {
+func (q *recognizer) End() {
 	q.threshold()
 	for i := 0; i < q.h; i++ {
 		q.finderScan(i)
@@ -56,13 +67,13 @@ func (q *Recognizer) End() {
 	}
 }
 
-func (q *Recognizer) Extract(index int) (*QRCode, error) {
-	code := &QRCode{}
+func (q *recognizer) extract(index int) (*qrCode, error) {
+	code := &qrCode{}
 
 	qr := &q.grids[index]
 
 	if index < 0 || index >= len(q.grids) {
-		return nil, errors.New("out of range")
+		return nil, ErrOutOfRange
 	}
 
 	perspectiveMap(qr.c[:], 0.0, 0.0, &code.corners[0])
@@ -83,52 +94,29 @@ func (q *Recognizer) Extract(index int) (*QRCode, error) {
 	return code, nil
 }
 
-func (q *Recognizer) Decode(index int) (*QRData, error) {
-	code, err := q.Extract(index)
+func (q *recognizer) Decode(index int) (*QRData, error) {
+	code, err := q.extract(index)
 	if err != nil {
 		return nil, err
 	}
 	var data QRData
 	data.Payload = make([]uint8, 0)
 
-	retCode := Decode(code, &data)
-
-	if retCode != 0 {
-		return nil, Err(retCode)
-	}
-	return &data, nil
+	err = decode(code, &data)
+	return &data, err
 }
 
-func (q *Recognizer) Recognize(w, h, image []uint8) ([]*QRData, error) {
-	return nil, nil
-}
-
-/************************************************************************
- * Adaptive thresholding
- */
-
-const
-(
-	THRESHOLD_S_MIN = 1
-	THRESHOLD_S_DEN = 8
-	THRESHOLD_T     = 5
-)
-
-//二值化
-func (q *Recognizer) threshold() {
+func (q *recognizer) threshold() {
 	var x, y int
 	avgW := 0
 	avgU := 0
-	thresholds := q.w / THRESHOLD_S_DEN
+	thresholds := q.w / thresholdSDen
 
-	/*
-	 * Ensure a sane, non-zero value for threshold_s.
-	 *
-	 * threshold_s can be zero if the image width is small. We need to avoid
-	 * SIGFPE as it will be used as divisor.
-	 */
-	if thresholds < THRESHOLD_S_MIN {
-		thresholds = THRESHOLD_S_MIN
+	// Ensure a sane, non-zero value for threshold_s.
+	// threshold_s can be zero if the image width is small. We need to avoid
+	// SIGFPE as it will be used as divisor.
+	if thresholds < thresholdSMin {
+		thresholds = thresholdSMin
 	}
 
 	for y = 0; y < q.h; y++ {
@@ -152,28 +140,25 @@ func (q *Recognizer) threshold() {
 		}
 
 		for x = 0; x < q.w; x++ {
-			if int(row[x]) < rowAverage[x]*(100-THRESHOLD_T)/(200*thresholds) {
-				row[x] = QR_PIXEL_BLACK
+			if int(row[x]) < rowAverage[x]*(100-thresholdT)/(200*thresholds) {
+				row[x] = qrPixelBlack
 			} else {
-				row[x] = QR_PIXEL_WHITE
+				row[x] = qrPixelWhite
 			}
 		}
 	}
 }
 
-/************************************************************************
- * Span-based floodfill routine
- */
-const FLOOD_FILL_MAX_DEPTH = 4096
+const floodFileMaxDepth = 4096
 
 type spanFunc func(userData interface{}, y, left, right int)
 
-func (q *Recognizer) floodFillSeed(x, y, from, to int, span spanFunc, userData interface{}, depth int) {
+func (q *recognizer) floodFillSeed(x, y, from, to int, span spanFunc, userData interface{}, depth int) {
 	left := x
 	right := x
 	row := q.pixels[y*q.w : (y+1)*q.w]
 
-	if depth >= FLOOD_FILL_MAX_DEPTH {
+	if depth >= floodFileMaxDepth {
 		return
 	}
 
@@ -185,16 +170,16 @@ func (q *Recognizer) floodFillSeed(x, y, from, to int, span spanFunc, userData i
 		right++
 	}
 
-	/* Fill the extent */
+	// Fill the extent
 	for i := left; i <= right; i++ {
-		row[i] = qr_pixel_t(to)
+		row[i] = qrPixelType(to)
 	}
 
 	if span != nil {
 		span(userData, y, left, right)
 	}
 
-	/* Seed new flood-fills */
+	// Seed new flood-fills
 	if y > 0 {
 		row = q.pixels[(y-1)*q.w : (y)*q.w]
 		for i := left; i <= right; i++ {
@@ -215,27 +200,27 @@ func (q *Recognizer) floodFillSeed(x, y, from, to int, span spanFunc, userData i
 }
 
 func areaCount(userData interface{}, y, left, right int) {
-	region := userData.(*QrRegion)
+	region := userData.(*qrRegion)
 	region.count += right - left + 1
 }
 
-func (q *Recognizer) regionCode(x, y int) int {
+func (q *recognizer) regionCode(x, y int) int {
 	if x < 0 || y < 0 || x >= q.w || y >= q.h {
 		return -1
 	}
 	pixel := int(q.pixels[y*q.w+x])
-	if pixel >= QR_PIXEL_REGION {
+	if pixel >= qrPixelRegion {
 		return pixel
 	}
-	if pixel == QR_PIXEL_WHITE {
+	if pixel == qrPixelWhite {
 		return -1
 	}
-	if len(q.regions) >= QR_MAX_REGIONS {
+	if len(q.regions) >= qrMaxRegion {
 		return -1
 	}
 
 	region := len(q.regions)
-	q.regions = append(q.regions, QrRegion{})
+	q.regions = append(q.regions, qrRegion{})
 	box := &q.regions[region]
 
 	box.seed.x = x
@@ -281,7 +266,7 @@ func findOtherCorners(userData interface{}, y, left, right int) {
 	}
 }
 
-func (q *Recognizer) findRegionCorners(rcode int, ref *Point, corners []Point) {
+func (q *recognizer) findRegionCorners(rcode int, ref *point, corners []point) {
 	region := &q.regions[rcode]
 	psd := polygonScoreData{}
 	psd.corners = corners[:]
@@ -289,7 +274,7 @@ func (q *Recognizer) findRegionCorners(rcode int, ref *Point, corners []Point) {
 	psd.ref = *ref
 	psd.scores[0] = -1
 
-	q.floodFillSeed(region.seed.x, region.seed.y, rcode, QR_PIXEL_BLACK, findOneCorner, &psd, 0)
+	q.floodFillSeed(region.seed.x, region.seed.y, rcode, qrPixelBlack, findOneCorner, &psd, 0)
 
 	psd.ref.x = psd.corners[0].x - psd.ref.x
 	psd.ref.y = psd.corners[0].y - psd.ref.y
@@ -306,20 +291,20 @@ func (q *Recognizer) findRegionCorners(rcode int, ref *Point, corners []Point) {
 	psd.scores[1] = i
 	psd.scores[3] = -i
 
-	q.floodFillSeed(region.seed.x, region.seed.y, QR_PIXEL_BLACK, rcode, findOtherCorners, &psd, 0)
+	q.floodFillSeed(region.seed.x, region.seed.y, qrPixelBlack, rcode, findOtherCorners, &psd, 0)
 }
 
-func (q *Recognizer) recordCapstone(ring, stone int) {
+func (q *recognizer) recordCapstone(ring, stone int) {
 
 	stoneReg := &q.regions[stone]
 	ringReg := &q.regions[ring]
 
-	if len(q.capstones) >= QR_MAX_CAPSTONES {
+	if len(q.capstones) >= qrMaxCastones {
 		return
 	}
 
 	csIndex := len(q.capstones)
-	q.capstones = append(q.capstones, QrCapstone{})
+	q.capstones = append(q.capstones, qrCapstone{})
 	capstone := &q.capstones[csIndex]
 
 	capstone.qrGrid = -1
@@ -328,16 +313,16 @@ func (q *Recognizer) recordCapstone(ring, stone int) {
 	stoneReg.capstone = csIndex
 	ringReg.capstone = csIndex
 
-	/* Find the corners of the ring */
+	// Find the corners of the ring
 	q.findRegionCorners(ring, &stoneReg.seed, capstone.corners[:])
 
-	///* Set up the perspective transform and find the center */
+	// Set up the perspective transform and find the center
 	perspectiveSetup(capstone.c[:], capstone.corners[:], 7.0, 7.0)
 	perspectiveMap(capstone.c[:], 3.5, 3.5, &capstone.center)
 
 }
 
-func perspectiveSetup(c []float64, rect []Point, w, h float64) {
+func perspectiveSetup(c []float64, rect []point, w, h float64) {
 	x0 := float64(rect[0].x)
 	y0 := float64(rect[0].y)
 	x1 := float64(rect[1].x)
@@ -358,7 +343,7 @@ func perspectiveSetup(c []float64, rect []Point, w, h float64) {
 	c[7] = (-x2*y3 + x1*y3 + x3*y2 + x0*(y1-y2) - x3*y1 + (x2-x1)*y0) / hden
 }
 
-func perspectiveMap(c [] float64, u, v float64, ret *Point) {
+func perspectiveMap(c []float64, u, v float64, ret *point) {
 	den := c[6]*u + c[7]*v + 1.0
 	x := (c[0]*u + c[1]*v + c[2]) / den
 	y := (c[3]*u + c[4]*v + c[5]) / den
@@ -366,7 +351,7 @@ func perspectiveMap(c [] float64, u, v float64, ret *Point) {
 	ret.y = int(y + 0.5)
 }
 
-func perspectiveUnmap(c [] float64, in *Point, u, v *float64) {
+func perspectiveUnmap(c []float64, in *point, u, v *float64) {
 	x := float64(in.x)
 	y := float64(in.y)
 	den := -c[0]*c[7]*y + c[1]*c[6]*y + (c[3]*c[7]-c[4]*c[6])*x + c[0]*c[4] - c[1]*c[3]
@@ -374,7 +359,7 @@ func perspectiveUnmap(c [] float64, in *Point, u, v *float64) {
 	*v = (c[0]*(y-c[5]) - c[2]*c[6]*y + (c[5]*c[6]-c[3])*x + c[2]*c[3]) / den
 }
 
-func (q *Recognizer) testCapstone(x, y int, pb []int) {
+func (q *recognizer) testCapstone(x, y int, pb []int) {
 
 	ringRight := q.regionCode(x-pb[4], y)
 	stone := q.regionCode(x-pb[4]-pb[3]-pb[2], y)
@@ -383,11 +368,11 @@ func (q *Recognizer) testCapstone(x, y int, pb []int) {
 	if ringLeft < 0 || ringRight < 0 || stone < 0 {
 		return
 	}
-	/* Left and ring of ring should be connected */
+	// Left and ring of ring should be connected
 	if ringLeft != ringRight {
 		return
 	}
-	/* Ring should be disconnected from stone */
+	// Ring should be disconnected from stone
 	if ringLeft == stone {
 		return
 	}
@@ -397,7 +382,7 @@ func (q *Recognizer) testCapstone(x, y int, pb []int) {
 	if stoneReg.capstone >= 0 || ringReg.capstone >= 0 {
 		return
 	}
-	/* Ratio should ideally be 37.5 */
+	// Ratio should ideally be 37.5
 	ratio := stoneReg.count * 100 / ringReg.count
 	if ratio < 10 || ratio > 70 {
 		return
@@ -405,7 +390,7 @@ func (q *Recognizer) testCapstone(x, y int, pb []int) {
 	q.recordCapstone(ringLeft, stone)
 }
 
-func (q *Recognizer) finderScan(y int) {
+func (q *recognizer) finderScan(y int) {
 
 	row := q.pixels[y*q.w : (y+1)*q.w]
 	x := 0
@@ -450,32 +435,31 @@ func (q *Recognizer) finderScan(y int) {
 	}
 }
 
-func (q *Recognizer) findAlignmentPattern(index int) {
+func (q *recognizer) findAlignmentPattern(index int) {
 	qr := &q.grids[index]
 	c0 := &q.capstones[qr.caps[0]]
 	c2 := &q.capstones[qr.caps[2]]
 
-	var a, b, c Point
+	var a, b, c point
 	stepSize := 1
 	dir := 0
 	var u, v float64
 
-	/* Grab our previous estimate of the alignment pattern corner */
+	// Grab our previous estimate of the alignment pattern corner
 	b = qr.align
 
-	/* Guess another two corners of the alignment pattern so that we
-	 * can estimate its size.
-	 */
-	perspectiveUnmap(c0.c[:], &b, &u, &v);
-	perspectiveMap(c0.c[:], u, v+1.0, &a);
-	perspectiveUnmap(c2.c[:], &b, &u, &v);
-	perspectiveMap(c2.c[:], u+1.0, v, &c);
-	sizeEstimate := int(math.Abs(float64((a.x-b.x)*-(c.y - b.y) + (a.y-b.y)*(c.x-b.x))))
+	// Guess another two corners of the alignment pattern so that we
+	// can estimate its size.
 
-	/* Spiral outwards from the estimate point until we find something
-	 * roughly the right size. Don't look too far from the estimate
-	 * point.
-	 */
+	perspectiveUnmap(c0.c[:], &b, &u, &v)
+	perspectiveMap(c0.c[:], u, v+1.0, &a)
+	perspectiveUnmap(c2.c[:], &b, &u, &v)
+	perspectiveMap(c2.c[:], u+1.0, v, &c)
+	sizeEstimate := int(math.Abs(float64((a.x-b.x)*-(c.y-b.y) + (a.y-b.y)*(c.x-b.x))))
+
+	// Spiral outwards from the estimate point until we find something
+	// roughly the right size. Don't look too far from the estimate point
+
 	for stepSize*stepSize < sizeEstimate*100 {
 		dxMap := []int{1, 0, -1, 0}
 		dyMap := []int{0, -1, 0, 1}
@@ -503,13 +487,12 @@ func (q *Recognizer) findAlignmentPattern(index int) {
 	}
 }
 
-/* Read a cell from a grid using the currently set perspective
-* transform. Returns +/- 1 for black/white, 0 for cells which are
-* out of image bounds.
-*/
-func (q *Recognizer) readCell(index, x, y int) int {
+// readCell read a cell from a grid using the currently set perspective
+// transform. Returns +/- 1 for black/white, 0 for cells which are
+// out of image bounds.
+func (q *recognizer) readCell(index, x, y int) int {
 	qr := &q.grids[index]
-	var p Point
+	var p point
 
 	perspectiveMap(qr.c[:], float64(x)+0.5, float64(y)+0.5, &p)
 	if p.y < 0 || p.y >= q.h || p.x < 0 || p.x >= q.w {
@@ -521,13 +504,13 @@ func (q *Recognizer) readCell(index, x, y int) int {
 	return -1
 }
 
-func (q *Recognizer) fitnessCell(index, x, y int) int {
+func (q *recognizer) fitnessCell(index, x, y int) int {
 	qr := &q.grids[index]
 	score := 0
 	offsets := []float64{0.3, 0.5, 0.7}
 	for v := 0; v < 3; v++ {
 		for u := 0; u < 3; u++ {
-			var p Point
+			var p point
 			perspectiveMap(qr.c[:], float64(x)+offsets[u], float64(y)+offsets[v], &p)
 
 			if p.y < 0 || p.y >= q.h || p.x < 0 || p.x >= q.w {
@@ -543,7 +526,7 @@ func (q *Recognizer) fitnessCell(index, x, y int) int {
 	return score
 }
 
-func (q *Recognizer) fitnessRing(index, cx, cy, radius int) int {
+func (q *recognizer) fitnessRing(index, cx, cy, radius int) int {
 	score := 0
 	for i := 0; i < radius*2; i++ {
 		score += q.fitnessCell(index, cx-radius+i, cy-radius)
@@ -554,13 +537,13 @@ func (q *Recognizer) fitnessRing(index, cx, cy, radius int) int {
 	return score
 }
 
-func (q *Recognizer) fitnessApat(index, cx, cy int) int {
+func (q *recognizer) fitnessApat(index, cx, cy int) int {
 	return q.fitnessCell(index, cx, cy) -
 		q.fitnessRing(index, cx, cy, 1) +
 		q.fitnessRing(index, cx, cy, 2)
 }
 
-func (q *Recognizer) fitnessCapstone(index, x, y int) int {
+func (q *recognizer) fitnessCapstone(index, x, y int) int {
 	x += 3
 	y += 3
 	return q.fitnessCell(index, x, y) +
@@ -569,17 +552,16 @@ func (q *Recognizer) fitnessCapstone(index, x, y int) int {
 		q.fitnessRing(index, x, y, 3)
 }
 
-/* Compute a fitness score for the currently configured perspective
-* transform, using the features we expect to find by scanning the
-* grid.
-*/
-func (q *Recognizer) fitnessAll(index int) int {
+// fitnessAll compute a fitness score for the currently configured perspective
+// transform, using the features we expect to find by scanning the
+// grid.
+func (q *recognizer) fitnessAll(index int) int {
 	qr := &q.grids[index]
 	version := (qr.gridSize - 17) / 4
 	info := &qrVersionDb[version]
 	score := 0
 
-	/* Check the timing pattern */
+	// Check the timing pattern
 	for i := 0; i < qr.gridSize-14; i++ {
 		expect := 1
 		if i&1 == 0 {
@@ -589,18 +571,18 @@ func (q *Recognizer) fitnessAll(index int) int {
 		score += q.fitnessCell(index, 6, i+7) * expect
 	}
 
-	/* Check capstones */
+	// Check capstones
 	score += q.fitnessCapstone(index, 0, 0)
 	score += q.fitnessCapstone(index, qr.gridSize-7, 0)
 	score += q.fitnessCapstone(index, 0, qr.gridSize-7)
 
-	if version < 0 || version > QR_MAX_VERSION {
+	if version < 0 || version > qrMaxVersion {
 		return score
 	}
 
-	/* Check alignment patterns */
+	// Check alignment patterns
 	apCount := 0
-	for (apCount < QR_MAX_ALIGNMENT) && info.apat[apCount] != 0 {
+	for (apCount < qrMaxAliment) && info.apat[apCount] != 0 {
 		apCount++
 	}
 
@@ -618,7 +600,7 @@ func (q *Recognizer) fitnessAll(index int) int {
 	return score
 }
 
-func (q *Recognizer) jigglePerspective(index int) {
+func (q *recognizer) jigglePerspective(index int) {
 	qr := &q.grids[index]
 	best := q.fitnessAll(index)
 
@@ -654,13 +636,11 @@ func (q *Recognizer) jigglePerspective(index int) {
 	}
 }
 
-/* Once the capstones are in place and an alignment point has been
-* chosen, we call this function to set up a grid-reading perspective
-* transform.
-*/
-func (q *Recognizer) setupQrPerspective(index int) {
+// Once the capstones are in place and an alignment point has been chosen,
+// we call this function to set up a grid-reading perspective transform.
+func (q *recognizer) setupQrPerspective(index int) {
 	qr := &q.grids[index]
-	var rect [4]Point
+	var rect [4]point
 
 	/* Set up the perspective map for reading the grid */
 	rect[0] = q.capstones[qr.caps[1]].corners[0]
@@ -672,8 +652,8 @@ func (q *Recognizer) setupQrPerspective(index int) {
 	q.jigglePerspective(index)
 }
 
-func rotateCapstone(cap *QrCapstone, h0, hd *Point) {
-	copy := [4]Point{}
+func rotateCapstone(cap *qrCapstone, h0, hd *point) {
+	copy := [4]point{}
 
 	var best int
 	var bestScore int
@@ -696,7 +676,7 @@ func rotateCapstone(cap *QrCapstone, h0, hd *Point) {
 	perspectiveSetup(cap.c[:], cap.corners[:], 7.0, 7.0)
 }
 
-func (q *Recognizer) timingScan(p0, p1 *Point) int {
+func (q *recognizer) timingScan(p0, p1 *point) int {
 	n := p1.x - p0.x
 	d := p1.y - p0.y
 	x := p0.x
@@ -720,7 +700,7 @@ func (q *Recognizer) timingScan(p0, p1 *Point) int {
 	if math.Abs(float64(n)) > math.Abs(float64(d)) {
 		n, d = d, n
 		dom = &x
-		nondom = &y;
+		nondom = &y
 	} else {
 		dom = &y
 		nondom = &x
@@ -780,16 +760,15 @@ func findLeftMostToLine(userData interface{}, y, left, right int) {
 	}
 }
 
-/* Try the measure the timing pattern for a given QR code. This does
- * not require the global perspective to have been set up, but it
- * does require that the capstone corners have been set to their
- * canonical rotation.
- *
- * For each capstone, we find a point in the middle of the ring band
- * which is nearest the centre of the code. Using these points, we do
- * a horizontal and a vertical timing scan.
- */
-func (q *Recognizer) measureTimingPattern(index int) int {
+// Try the measure the timing pattern for a given QR code. This does
+// not require the global perspective to have been set up, but it
+// does require that the capstone corners have been set to their
+// canonical rotation.
+//
+// For each capstone, we find a point in the middle of the ring band
+// which is nearest the centre of the code. Using these points, we do
+// a horizontal and a vertical timing scan.
+func (q *recognizer) measureTimingPattern(index int) int {
 	qr := &q.grids[index]
 	for i := 0; i < 3; i++ {
 		us := []float64{6.5, 6.5, 0.5}
@@ -818,18 +797,18 @@ func (q *Recognizer) measureTimingPattern(index int) int {
 	return 0
 }
 
-func (q *Recognizer) recordQrGrid(a, b, c int) {
+func (q *recognizer) recordQrGrid(a, b, c int) {
 
-	if len(q.grids) >= QR_MAX_GRIDS {
+	if len(q.grids) >= qrMaxGrids {
 		return
 	}
 
 	// Construct the hypotenuse line from A to C. B should be tothe left of this line.
 
 	h0 := q.capstones[a].center
-	var hd Point
-	hd.x = q.capstones[c].center.x - q.capstones[a].center.x;
-	hd.y = q.capstones[c].center.y - q.capstones[a].center.y;
+	var hd point
+	hd.x = q.capstones[c].center.x - q.capstones[a].center.x
+	hd.y = q.capstones[c].center.y - q.capstones[a].center.y
 
 	// Make sure A-B-C is clockwise
 	if (q.capstones[b].center.x-h0.x)*-hd.y+(q.capstones[b].center.y-h0.y)*hd.x > 0 {
@@ -839,7 +818,7 @@ func (q *Recognizer) recordQrGrid(a, b, c int) {
 	}
 
 	qrIndex := len(q.grids)
-	q.grids = append(q.grids, QrGrid{})
+	q.grids = append(q.grids, qrGrid{})
 	qr := &q.grids[qrIndex]
 
 	qr.caps[0] = a
@@ -847,9 +826,8 @@ func (q *Recognizer) recordQrGrid(a, b, c int) {
 	qr.caps[2] = c
 	qr.alignRegion = -1
 
-	/* Rotate each capstone so that corner 0 is top-left with respect
-	* to the grid.
-	*/
+	// Rotate each capstone so that corner 0 is top-left with respect
+	// to the grid.
 
 	for i := 0; i < 3; i++ {
 		cap := &q.capstones[qr.caps[i]]
@@ -857,12 +835,9 @@ func (q *Recognizer) recordQrGrid(a, b, c int) {
 		cap.qrGrid = qrIndex
 	}
 
-	/* Check the timing pattern. This doesn't require a perspective
-	 * transform.
-	 */
+	// Check the timing pattern. This doesn't require a perspective transform.
 
 	if q.measureTimingPattern(qrIndex) < 0 {
-		//fmt.Printf("measureTimingPattern failed\n")
 		goto fail
 	}
 
@@ -876,33 +851,32 @@ func (q *Recognizer) recordQrGrid(a, b, c int) {
 		goto fail
 	}
 
-	///* On V2+ grids, we should use the alignment pattern. */
+	// On V2+ grids, we should use the alignment pattern.
 
 	if qr.gridSize > 21 {
-		///* Try to find the actual location of the alignment pattern. */
+		// Try to find the actual location of the alignment pattern.
 
 		q.findAlignmentPattern(qrIndex)
 
-		/* Find the point of the alignment pattern closest to the
-		 * top-left of the QR grid.
-		 */
+		// Find the point of the alignment pattern closest to the
+		// top-left of the QR grid.
 
 		if qr.alignRegion >= 0 {
 			var psd polygonScoreData
-			psd.corners = make([]Point, 1)
+			psd.corners = make([]point, 1)
 			reg := &q.regions[qr.alignRegion]
 
-			/* Start from some point inside the alignment pattern */
+			// Start from some point inside the alignment pattern
 			qr.align = reg.seed
 			psd.ref = hd
 			psd.corners[0] = qr.align
 
 			psd.scores[0] = -hd.y*qr.align.x + hd.x*qr.align.y
 
-			q.floodFillSeed(reg.seed.x, reg.seed.y, qr.alignRegion, QR_PIXEL_BLACK, nil, nil, 0)
+			q.floodFillSeed(reg.seed.x, reg.seed.y, qr.alignRegion, qrPixelBlack, nil, nil, 0)
 
-			q.floodFillSeed(reg.seed.x, reg.seed.y, QR_PIXEL_BLACK, qr.alignRegion, findLeftMostToLine, &psd, 0);
-			qr.align = psd.corners[0] ///psd.corners = &qr.align;
+			q.floodFillSeed(reg.seed.x, reg.seed.y, qrPixelBlack, qr.alignRegion, findLeftMostToLine, &psd, 0)
+			qr.align = psd.corners[0]
 
 		}
 	}
@@ -910,9 +884,8 @@ func (q *Recognizer) recordQrGrid(a, b, c int) {
 	q.setupQrPerspective(qrIndex)
 	return
 
-	/* We've been unable to complete setup for this grid. Undo what we've
-	 * recorded and pretend it never happened.
-	 */
+	// We've been unable to complete setup for this grid. Undo what we've
+	// recorded and pretend it never happened.
 
 fail:
 	for i := 0; i < 3; i++ {
@@ -922,12 +895,12 @@ fail:
 
 }
 
-func (q *Recognizer) testNeighbours(i int, hlist []*neighbour, vlist []*neighbour) {
+func (q *recognizer) testNeighbours(i int, hlist []*neighbour, vlist []*neighbour) {
 	bestScore := 0.0
 	bestH := -1
 	bestV := -1
 
-	/* Test each possible grouping */
+	// Test each possible grouping
 
 	for j := 0; j < len(hlist); j++ {
 		hn := hlist[j]
@@ -955,7 +928,7 @@ func (q *Recognizer) testNeighbours(i int, hlist []*neighbour, vlist []*neighbou
 	q.recordQrGrid(bestH, i, bestV)
 }
 
-func (q *Recognizer) testGrouping(i int) {
+func (q *recognizer) testGrouping(i int) {
 	c1 := &q.capstones[i]
 
 	hlist := make([]*neighbour, 0)
@@ -965,9 +938,8 @@ func (q *Recognizer) testGrouping(i int) {
 		return
 	}
 
-	/* Look for potential neighbours by examining the relative gradients
-	 * from this capstone to others.
-	*/
+	// Look for potential neighbours by examining the relative gradients
+	// from this capstone to others.
 
 	for j := 0; j < len(q.capstones); j++ {
 		c2 := &q.capstones[j]

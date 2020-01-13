@@ -6,16 +6,11 @@ import (
 	"math"
 )
 
-// Decode decodes the passed image and returns a slice of Data
-// structures of the found QR data.
+// Recognize recognizes the passed image and returns a slice of QRData.
 func Recognize(img image.Image) ([]*QRData, error) {
-	r := NewRecognzer()
 	b := img.Bounds()
 
-	if r.Resize(b.Max.X, b.Max.Y) < 0 {
-		return nil, ERR_NO_QR_CODE
-	}
-
+	r := NewRecognizer(b.Max.X, b.Max.Y)
 	r.Begin()
 	switch m := img.(type) {
 	case *image.Gray:
@@ -51,7 +46,7 @@ func Recognize(img image.Image) ([]*QRData, error) {
 
 	count := r.Count()
 	if count == 0 {
-		return nil, ERR_NO_QR_CODE
+		return nil, ErrNoQRCode
 	}
 
 	qrCodes := make([]*QRData, 0)
@@ -61,6 +56,9 @@ func Recognize(img image.Image) ([]*QRData, error) {
 			continue
 		}
 		qrCodes = append(qrCodes, code)
+	}
+	if len(qrCodes) == 0 {
+		return nil, ErrNoQRCode
 	}
 	return qrCodes, nil
 }
