@@ -312,7 +312,7 @@ func formatSyndromes(u uint16, s []uint8) int {
 	for i := 0; i < formatSyndrome; i++ {
 		s[i] = 0
 		for j := 0; j < formatBits; j++ {
-			if u&(uint16(1<<uint(j))) != 0 {
+			if u&(uint16(1 << uint(j))) != 0 {
 				s[i] ^= gf16Exp[((i+1)*j)%15]
 			}
 		}
@@ -574,8 +574,8 @@ func alphaTuple(data *QRData, ds *datastream, bits, digits int) int {
 		return -1
 	}
 	tuple := takeBits(ds, bits)
-	data.Payload = append(data.Payload, make([]uint8, digits)...)
 	payloadLen := len(data.Payload)
+	data.Payload = append(data.Payload, make([]uint8, digits)...)
 	for i := 0; i < digits; i++ {
 		data.Payload[payloadLen+digits-i-1] = alphaMap[tuple%45]
 		tuple /= 45
